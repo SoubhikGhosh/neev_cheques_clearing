@@ -163,7 +163,7 @@ async def call_extraction_api_async_with_retry(
                 if retry_after_header:
                     try:
                         # If the server provides a specific wait time, use it.
-                        wait_time = int(retry_after_header)
+                        wait_time = float(retry_after_header)
                         logger.info(f"Rate limit hit. Honoring 'Retry-After' header, waiting for {wait_time} seconds.")
                     except (ValueError, TypeError):
                         logger.warning(f"Could not parse 'Retry-After' header: '{retry_after_header}'. Using exponential backoff.")
