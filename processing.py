@@ -60,7 +60,7 @@ async def process_single_document_async(
             except json.JSONDecodeError as e:
                 logger.warning(f"JSON parsing failed for {filename} on attempt {attempt + 1}/{number_of_json_retries}. Retrying...")
                 if attempt < 2:
-                    await asyncio.sleep(1) # Wait 1 second before retrying API call
+                    await asyncio.sleep(1)
                 else:
                     logger.error(f"JSON parsing failed for {filename} after 3 attempts. Error: {e}")
                     return {"error": f"JSON Decode Error after retries: {e}", "file_path": file_path}
@@ -97,12 +97,22 @@ async def process_zip_file_and_generate_report(job_id: str, file_contents: List[
             
             semaphore = asyncio.Semaphore(config.API_CONCURRENCY_LIMIT)
             async with httpx.AsyncClient(verify=False) as client:
-                tasks = []
-                for file_info in all_files_to_process:
-                    task = process_single_document_async(client, semaphore, file_info)
-                    tasks.append(task)
+                tasks = [
+                    process_single_document_async(client, semaphore, file_info)
+                    for file_info in all_files_to_process
+                ]
                 
-                all_results = await asyncio.gather(*tasks)
+                all_results = []
+                for future in asyncio.as_completed(tasks):
+                    result = await future
+                    all_results.append(result)
+                    
+                    # Update progress after each file is processed
+                    processed_count = len(all_results)
+                    job_status_dict["processed_files"] = processed_count
+                    if total_files > 0:
+                        job_status_dict["progress_percentage"] = (processed_count / total_files) * 100
+                    logger.info(f"Job {job_id} Progress: {processed_count}/{total_files} ({job_status_dict['progress_percentage']:.2f}%)")
 
             all_data_for_df = []
             for result in all_results:
