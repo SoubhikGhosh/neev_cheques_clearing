@@ -16,6 +16,10 @@ OUTPUT_DIR = "job_outputs"
 API_RETRIES = 50
 JSON_RETRIES = 3
 
+# --- Logging Configuration ---
+LOG_DIR = "app_logs" # Directory to store log files
+LOG_FILENAME = "cheque_api.log" # Name of the log file
+
 # --- Field Definitions ---
 FIELDS = [
     {"id": 1, "name": "bank_name"},

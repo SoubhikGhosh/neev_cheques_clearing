@@ -8,6 +8,8 @@ import re
 import base64
 import asyncio
 from typing import Optional
+from logging.handlers import RotatingFileHandler
+import os
 
 import httpx
 from dateutil import parser
@@ -42,15 +44,42 @@ def sanitize_amount(amount_str: Optional[str]) -> Optional[str]:
 
 
 def configure_logging():
-    """Configures application-wide logging."""
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - [%(threadName)s] - %(message)s',
+    """
+    Configures logging to write to a rotating file and the console.
+    """
+    # Ensure the log directory exists
+    os.makedirs(config.LOG_DIR, exist_ok=True)
+    log_file_path = os.path.join(config.LOG_DIR, config.LOG_FILENAME)
+
+    # Define log message format
+    log_formatter = logging.Formatter(
+        '%(asctime)s - %(levelname)s - [%(threadName)s] - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
-    logging.getLogger('urllib3').setLevel(logging.WARNING)
-    logging.getLogger('httpx').setLevel(logging.WARNING)
-    logger.info("Logging configured.")
+    
+    # Get the root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+
+    # Prevent duplicate handlers if this function is called multiple times
+    if root_logger.hasHandlers():
+        root_logger.handlers.clear()
+
+    # --- Rotating File Handler ---
+    # Rotates logs when they reach 10MB, keeping 5 old log files as backup.
+    file_handler = RotatingFileHandler(
+        log_file_path, maxBytes=10*1024*1024, backupCount=5
+    )
+    file_handler.setFormatter(log_formatter)
+    root_logger.addHandler(file_handler)
+
+    # --- Console (Stream) Handler ---
+    # This keeps printing logs to your terminal.
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(log_formatter)
+    root_logger.addHandler(stream_handler)
+
+    logger.info("Logging configured to write to file and console.")
 
 
 def extract_json_from_text(text: str) -> str:
