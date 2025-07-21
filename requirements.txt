@@ -1,0 +1,9 @@
+# requirements.txt
+
+fastapi
+uvicorn[standard]
+python-multipart
+pandas
+python-dateutil
+pydantic
+httpx

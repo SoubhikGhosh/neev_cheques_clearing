@@ -1,0 +1,8 @@
+curl -X GET "http://127.0.0.1:8000/download/a1b2c3d4-e5f6-7890-1234-567890abcdef" \
+  -o results.csv
+
+curl -X POST "http://127.0.0.1:8000/upload" \
+  -F "files=@/path/to/your/cheques1.zip" \
+  -F "files=@/path/to/your/cheques2.zip"
+
+curl -X GET "http://127.0.0.1:8000/status/a1b2c3d4-e5f6-7890-1234-567890abcdef"
