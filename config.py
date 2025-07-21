@@ -7,7 +7,7 @@ MODEL_NAME = "gemini-2.5-flash"
 
 # --- Performance Configuration ---
 # Limits the number of concurrent API requests to the LLM to prevent rate-limiting.
-API_CONCURRENCY_LIMIT = 50
+API_CONCURRENCY_LIMIT = 10
 
 # Defines the output directory for the final reports.
 OUTPUT_DIR = "job_outputs"

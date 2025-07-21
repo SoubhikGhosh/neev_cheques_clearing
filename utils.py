@@ -94,16 +94,15 @@ async def call_extraction_api_async_with_retry(
             APIRequestMessageContent(type="image_url", image_url={"url": f"data:{mime_type};base64,{base64_image}"})
         ])
     ]
-    api_request_body = APIRequestBody(model=config.MODEL_NAME, messages=messages)    
+
+    api_request_body = APIRequestBody(model=config.MODEL_NAME, messages=messages)
     data = api_request_body.model_dump(exclude_none=True)
 
     delay = initial_delay
     for i in range(max_retries):
         try:
             start_time = time.monotonic()
-
             response = await client.post(config.API_URL, headers=headers, json=data, timeout=300.0)
-
             duration = time.monotonic() - start_time
             logger.info(f"API call to {config.API_URL} responded in {duration:.2f} seconds.")
 
@@ -113,14 +112,32 @@ async def call_extraction_api_async_with_retry(
             if api_response.choices and api_response.choices[0].message.content:
                 return api_response.choices[0].message.content
             raise ValueError("API response is valid but missing expected content.")
-        
+
         except (httpx.RequestError, httpx.HTTPStatusError) as e:
             is_server_error = isinstance(e, httpx.HTTPStatusError) and e.response.status_code >= 500
-            
-            if is_server_error or isinstance(e, httpx.RequestError):
-                logger.warning(f"API call failed (Attempt {i + 1}/{max_retries}): {e}. Retrying in {delay:.2f}s...")
+            is_rate_limit_error = isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 429
+            is_network_error = isinstance(e, httpx.RequestError)
+
+            if is_server_error or is_rate_limit_error or is_network_error:
+                logger.warning(f"API call failed (Attempt {i + 1}/{max_retries}): {e}.")
                 if i == max_retries - 1:
-                    raise 
+                    logger.error("Max retries exceeded.")
+                    raise
+
+                # If we get a 429, check for a 'Retry-After' header and wait that long
+                if is_rate_limit_error:
+                    retry_after = e.response.headers.get('Retry-After')
+                    logger.info(f"Rate limit hit. Retry-After: {retry_after}")
+                    if retry_after:
+                        try:
+                            wait_time = int(retry_after)
+                            logger.info(f"Rate limit hit. Honoring 'Retry-After' header, waiting for {wait_time} seconds.")
+                            await asyncio.sleep(wait_time)
+                            continue  # Skip the exponential backoff for this attempt
+                        except (ValueError, TypeError):
+                            pass
+                
+                logger.info(f"Retrying in {delay:.2f} seconds.")
                 await asyncio.sleep(delay)
                 delay *= 2
             else:
@@ -129,5 +146,5 @@ async def call_extraction_api_async_with_retry(
         except (ValueError, Exception) as e:
             logger.error(f"Non-retryable application error: {e}")
             raise
-            
+
     raise Exception("API call failed after max retries.")
