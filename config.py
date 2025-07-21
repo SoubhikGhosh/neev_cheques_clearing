@@ -15,6 +15,7 @@ OUTPUT_DIR = "job_outputs"
 # --- Retry Configuration ---
 API_RETRIES = 50
 JSON_RETRIES = 3
+EXPONENTIAL_BACKOFF_FACTOR = 1.5
 
 # --- Logging Configuration ---
 LOG_DIR = "app_logs" # Directory to store log files

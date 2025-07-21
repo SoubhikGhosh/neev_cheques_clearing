@@ -19,6 +19,7 @@ from schemas import APIRequestBody, APIRequestMessage, APIRequestMessageContent,
 
 logger = logging.getLogger(__name__)
 number_of_api_retries = config.API_RETRIES
+exponential_backoff_factor = config.EXPONENTIAL_BACKOFF_FACTOR
 
 def parse_and_format_date(date_str: Optional[str]) -> Optional[str]:
     """Parses a date string and returns it as YYYY-MM-DD."""
@@ -94,7 +95,6 @@ def extract_json_from_text(text: str) -> str:
     logger.warning("Could not find clear JSON markers, returning raw text.")
     return text
 
-
 async def call_extraction_api_async_with_retry(
     client: httpx.AsyncClient,
     prompt: str,
@@ -104,8 +104,7 @@ async def call_extraction_api_async_with_retry(
     initial_delay: float = 1.5
 ) -> str:
     """
-    Calls the external LLM API asynchronously with exponential backoff.
-
+    Calls the external LLM API asynchronously with robust retry logic and exponential backoff.
     Args:
         client: An httpx.AsyncClient instance for connection pooling.
         prompt: The text prompt for the model.
@@ -147,31 +146,36 @@ async def call_extraction_api_async_with_retry(
             is_rate_limit_error = isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 429
             is_network_error = isinstance(e, httpx.RequestError)
 
-            if is_server_error or is_rate_limit_error or is_network_error:
-                logger.warning(f"API call failed (Attempt {i + 1}/{max_retries}): {e}.")
-                if i == max_retries - 1:
-                    logger.error("Max retries exceeded.")
-                    raise
-
-                # If we get a 429, check for a 'Retry-After' header and wait that long
-                if is_rate_limit_error:
-                    retry_after = e.response.headers.get('Retry-After')
-                    logger.info(f"Rate limit hit. Retry-After: {retry_after}")
-                    if retry_after:
-                        try:
-                            wait_time = int(retry_after)
-                            logger.info(f"Rate limit hit. Honoring 'Retry-After' header, waiting for {wait_time} seconds.")
-                            await asyncio.sleep(wait_time)
-                            continue  # Skip the exponential backoff for this attempt
-                        except (ValueError, TypeError):
-                            pass
-                
-                logger.info(f"Retrying in {delay:.2f} seconds.")
-                await asyncio.sleep(delay)
-                delay *= 2
-            else:
+            # Only retry on server errors, rate limits, or network errors.
+            if not (is_server_error or is_rate_limit_error or is_network_error):
                 logger.error(f"Non-retryable client error: {e}")
                 raise
+
+            logger.warning(f"API call failed (Attempt {i + 1}/{max_retries}): {e}.")
+            if i == max_retries - 1:
+                logger.error("Max retries exceeded.")
+                raise
+
+            wait_time = delay  # Default to the current exponential backoff delay.
+
+            if is_rate_limit_error:
+                retry_after_header = e.response.headers.get('Retry-After')
+                if retry_after_header:
+                    try:
+                        # If the server provides a specific wait time, use it.
+                        wait_time = int(retry_after_header)
+                        logger.info(f"Rate limit hit. Honoring 'Retry-After' header, waiting for {wait_time} seconds.")
+                    except (ValueError, TypeError):
+                        logger.warning(f"Could not parse 'Retry-After' header: '{retry_after_header}'. Using exponential backoff.")
+            
+            jitter = random.uniform(0, 1)
+            total_wait = wait_time + jitter
+            
+            logger.info(f"Retrying in {total_wait:.2f} seconds.")
+            await asyncio.sleep(total_wait)
+
+            delay *= exponential_backoff_factor
+
         except (ValueError, Exception) as e:
             logger.error(f"Non-retryable application error: {e}")
             raise
